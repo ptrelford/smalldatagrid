@@ -1,0 +1,7 @@
+<OutOfBrowserSettings ShortName="SmallDataGrid Application" EnableGPUAcceleration="True" ShowInstallMenuItem="False">
+  <OutOfBrowserSettings.Blurb>SmallDataGrid Application on your desktop; at home, at work or on the go.</OutOfBrowserSettings.Blurb>
+  <OutOfBrowserSettings.WindowSettings>
+    <WindowSettings Title="SmallDataGrid Application" />
+  </OutOfBrowserSettings.WindowSettings>
+  <OutOfBrowserSettings.Icons />
+</OutOfBrowserSettings>
