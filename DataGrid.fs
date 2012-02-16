@@ -45,6 +45,7 @@ module internal Relay =
        
 type DataGridColumn<'TItem>(header:FrameworkElement, 
                             createCell:Func<'TItem,FrameworkElement>,
+                            // TODO: updateCell:Action<'TItem>
                             definition:ColumnDefinition) =
     new (header:string,createCell:'TItem->FrameworkElement) =
         DataGridColumn(TextBlock(Text=header),createCell,ColumnDefinition(Width=GridLength.Auto))
@@ -55,6 +56,12 @@ type DataGridColumn<'TItem>(header:FrameworkElement,
     member column.Header = header
     member column.CreateCell row = createCell.Invoke row
     member column.Definition = definition
+
+type DataGridRow<'TItem>(header:obj, item:'TItem, definition:RowDefinition) =
+    new (header,item) = DataGridRow(header,item,RowDefinition())
+    member this.Item = item
+    member this.Header = header
+    member this.Definition = definition
 
 [<AutoOpen>]
 module internal Changers =
@@ -76,7 +83,7 @@ module internal Changers =
             (headers:IList<_>)
             (splitters:IList<_>)
             (vlines:IList<_>,hlines:IList<_>) 
-            items
+            (rows:DataGridRow<_> seq)
             (rowCells:List<List<_>>) =
 
         let insertColumnDefinition(index,definition) =
@@ -101,7 +108,7 @@ module internal Changers =
 
                 pushRight vlines
                 let vline = createVerticalLine()
-                Grid.SetRowSpan(vline, 1 + Seq.length items)
+                Grid.SetRowSpan(vline, 1 + Seq.length rows)
                 insertElement vline
                 vlines.Insert(index,vline)
 
@@ -118,10 +125,10 @@ module internal Changers =
                 insertElement (splitter)
                 splitters.Insert(index, splitter)
 
-                items |> Seq.iteri (fun y item -> 
+                rows |> Seq.iteri (fun y row -> 
                     let cells = rowCells.[y]
                     pushRight cells
-                    let cell = column.CreateCell(item) 
+                    let cell = column.CreateCell(row.Item) 
                     cell.Margin <- margin
                     insertElement cell
                     setRow(cell, y)
@@ -151,7 +158,7 @@ module internal Changers =
                 pullLeft splitters
                 splitters.RemoveAt(index)
 
-                items |> Seq.iteri (fun y item ->
+                rows |> Seq.iteri (fun y row ->
                     let cells = rowCells.[y]
                     removeElement cells.[index]
                     pullLeft cells
@@ -173,11 +180,11 @@ module internal Changers =
                 clearColumnDefinitions()
         }
 
-    let createItemsChanger 
+    let createRowsChanger 
             (grid:Grid) 
             (rowHeaders:IList<FrameworkElement>)
             (vlines:IList<_>,hlines:IList<_>)
-            (columns:DataGridColumn<_> seq)
+            (columns:DataGridColumn<'TItem> seq)
             (rowCells:List<List<_>>) =
         
         let insertRowDefinition(index,definition) =
@@ -185,10 +192,10 @@ module internal Changers =
         let removeRowDefinition(index) =
             grid.RowDefinitions.RemoveAt(index+1)
         let clearRowDefinitions() =
-            let ys = grid.RowDefinitions 
+            let ys = grid.RowDefinitions
             for index = ys.Count-1 downto 1 do ys.RemoveAt index
-        { new ICollectionChanger<'TItem> with
-            member target.InsertAt(index,item) =
+        { new ICollectionChanger<DataGridRow<'TItem>> with
+            member target.InsertAt(index,row) =
                 let defaultRowHeight = 22.0
                 insertRowDefinition(index,RowDefinition(Height=GridLength(defaultRowHeight)))
 
@@ -213,14 +220,14 @@ module internal Changers =
                     Grid.SetRowSpan(vline, 1 + hlines.Count)
 
                 pushDown (fun y -> rowHeaders.[y])
-                let header = TextBlock(Text=item.ToString())
+                let header = TextBlock(Text=row.Header.ToString())
                 setRow(header,index)
                 grid.Children.Add(header)
                 rowHeaders.Insert(index, header)
 
                 let cells = List<_>()
                 columns |> Seq.iteri(fun x column ->
-                    let cell = column.CreateCell(item)
+                    let cell = column.CreateCell(row.Item)
                     cell.Margin <- margin  
                     setColumn(cell, x)
                     setRow(cell, index)
@@ -241,7 +248,7 @@ module internal Changers =
                 removeElement hlines.[index]
                 pullUp (fun y -> hlines.[y])
                 hlines.RemoveAt(index)
-                                            
+
                 for vline in vlines do
                     Grid.SetRowSpan(vline, 1 + hlines.Count)
 
@@ -293,16 +300,16 @@ type DataGrid<'TItem> () =
     let columnHeaders = List<FrameworkElement>()
     let columnSplitters = List<GridSplitter>()
     let columnLines = List<Rectangle>()
-    let items = ObservableCollection<'TItem>()
+    let rows = ObservableCollection<DataGridRow<'TItem>>()
     let rowHeaders = List<FrameworkElement>()
     let rowLines = List<Rectangle>()
     let rowCells = List<List<FrameworkElement>>()
 
-    let columnsChanger = createColumnsChanger grid columnHeaders columnSplitters (columnLines,rowLines) items rowCells
+    let columnsChanger = createColumnsChanger grid columnHeaders columnSplitters (columnLines,rowLines) rows rowCells
     do  relayChanges columns columnsChanger |> remember
     
-    let itemsChanger = createItemsChanger grid rowHeaders (columnLines,rowLines) columns rowCells
-    do  relayChanges items itemsChanger |> remember
+    let rowsChanger = createRowsChanger grid rowHeaders (columnLines,rowLines) columns rowCells
+    do  relayChanges rows rowsChanger |> remember
 
     let scroll = ScrollViewer(Content=grid)
     do  scroll.HorizontalScrollBarVisibility <- ScrollBarVisibility.Auto
@@ -310,8 +317,7 @@ type DataGrid<'TItem> () =
     do base.Content <- scroll
 
     member this.Columns = columns
-    /// Rows
-    member this.Items = items
+    member this.Rows = rows
 
     interface IDisposable with
         member this.Dispose() = for d in disposables do d.Dispose()
