@@ -16,7 +16,7 @@ type Row (name:string) =
 
 type App() as app =
     inherit Application()
-
+    (*
     let toCell s (row:_) = 
         let binding = Binding("Name")
         let text = TextBlock()
@@ -33,17 +33,27 @@ type App() as app =
 
     let rows = [1..10] |> List.map (fun x -> Row("Hello World " + x.ToString()))
     do  rows |> Seq.iteri (fun i row -> DataGridRow(i, row) |> grid.Rows.Add)
-    (*
+    *)
+
+    let toDataTemplate s =
+        let ns = "http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        sprintf "<DataTemplate xmlns='%s'>%s</DataTemplate>" ns s
+        |> System.Windows.Markup.XamlReader.Load :?> DataTemplate
+    
     let grid = DataGrid()
-    do  for x = 0 to 5 do
-            DataGridColumn() |> grid.Columns.Add
+    
+    do  for x = 0 to 50 do
+            DataGridTemplateColumn(x.ToString(), toDataTemplate "<TextBlock Text='Cell'/>")
+            :> DataGridColumn
+            |> grid.Columns.Add
+    
     let rows = System.Collections.ObjectModel.ObservableCollection<_>()
     do  grid.LoadingRow
         |> Observable.subscribe
             (fun (e:DataGridRowEventArgs) -> 
-                e.Row.Header <- box "Row Header") |> ignore
+                e.Row.Header <- "Row " + e.Row.Item.ToString() ) |> ignore
     do  grid.ItemsSource <- rows
-    do  for y = 0 to 8 do
+    do  for y = 0 to 40 do
             Row(y.ToString()) |> rows.Add
-    *)
+    
     do  app.Startup.Add(fun _ -> app.RootVisual <- grid)

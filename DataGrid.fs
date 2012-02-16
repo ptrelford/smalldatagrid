@@ -62,16 +62,17 @@ module internal Relay =
        
 type DataGridColumn<'TItem>(header:FrameworkElement, 
                             createCell:Func<'TItem,FrameworkElement>,
-                            // TODO: updateCell:Action<'TItem>
                             definition:ColumnDefinition) =
     new (header:string,createCell:'TItem->FrameworkElement) =
         DataGridColumn(TextBlock(Text=header),createCell,ColumnDefinition(Width=GridLength.Auto))
     new (header,createCell:'TItem->FrameworkElement) =
         DataGridColumn(header,createCell,ColumnDefinition(Width=GridLength.Auto))
+    new (header:obj,createCell:'TItem->FrameworkElement) =
+        DataGridColumn(TextBlock(Text=header.ToString()),createCell,ColumnDefinition(Width=GridLength.Auto))
     new (header,createCell:'TItem->FrameworkElement,width:GridLength) =
         DataGridColumn(header,createCell,ColumnDefinition(Width=width))
     member column.Header = header
-    member column.CreateCell row = createCell.Invoke row
+    member column.CreateCell row =createCell.Invoke row
     member column.Definition = definition
 
 type DataGridRow<'TItem>(header:obj, item:'TItem, definition:RowDefinition) =
@@ -350,8 +351,11 @@ type DataGrid<'TItem> () =
     interface IDisposable with
         member this.Dispose() = for d in disposables do d.Dispose()
 
-type DataGridColumn () =
-    inherit DataGridColumn<obj>("Header", fun _ -> TextBlock(Text="Cell") :> FrameworkElement)
+type DataGridColumn (header:obj, createCell) =
+    inherit DataGridColumn<obj>(header, createCell)
+    
+type DataGridTemplateColumn (header:obj, cellTemplate:DataTemplate) =
+    inherit DataGridColumn(header, (fun (item:obj) -> cellTemplate.LoadContent() :?> FrameworkElement))
 
 type DataGridRowEventArgs (row:DataGridRow<_>) =
     inherit EventArgs ()
