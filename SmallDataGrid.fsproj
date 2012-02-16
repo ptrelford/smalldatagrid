@@ -97,6 +97,9 @@
     <Reference Include="System.Net" />
     <Reference Include="System.Windows" />
     <Reference Include="System.Windows.Browser" />
+    <Reference Include="System.Windows.Controls">
+      <HintPath>c:\Program Files (x86)\Microsoft SDKs\Silverlight\v4.0\Libraries\Client\System.Windows.Controls.dll</HintPath>
+    </Reference>
     <Reference Include="System.Xml" />
   </ItemGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
