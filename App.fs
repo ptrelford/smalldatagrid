@@ -3,22 +3,6 @@
 open System.Windows
 open System.Windows.Controls
 open System.Windows.Data
-open System.ComponentModel
-open Microsoft.FSharp.Quotations.Patterns
-
-type ObservableObject () =
-    let propertyChanged = 
-        Event<PropertyChangedEventHandler,PropertyChangedEventArgs>()
-    let getPropertyName = function 
-        | PropertyGet(_,pi,_) -> pi.Name
-        | _ -> invalidOp "Expecting property getter expression"
-    interface INotifyPropertyChanged with
-        [<CLIEvent>]
-        member this.PropertyChanged = propertyChanged.Publish
-    member this.NotifyPropertyChanged propertyName = 
-        propertyChanged.Trigger(this,PropertyChangedEventArgs(propertyName))
-    member this.NotifyPropertyChanged quotation = 
-        quotation |> getPropertyName |> this.NotifyPropertyChanged
 
 type Row (name:string) =
     inherit ObservableObject()
@@ -49,4 +33,17 @@ type App() as app =
 
     let rows = [1..10] |> List.map (fun x -> Row("Hello World " + x.ToString()))
     do  rows |> Seq.iteri (fun i row -> DataGridRow(i, row) |> grid.Rows.Add)
+    (*
+    let grid = DataGrid()
+    do  for x = 0 to 5 do
+            DataGridColumn() |> grid.Columns.Add
+    let rows = System.Collections.ObjectModel.ObservableCollection<_>()
+    do  grid.LoadingRow
+        |> Observable.subscribe
+            (fun (e:DataGridRowEventArgs) -> 
+                e.Row.Header <- box "Row Header") |> ignore
+    do  grid.ItemsSource <- rows
+    do  for y = 0 to 8 do
+            Row(y.ToString()) |> rows.Add
+    *)
     do  app.Startup.Add(fun _ -> app.RootVisual <- grid)

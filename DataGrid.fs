@@ -9,6 +9,23 @@ open System.Windows.Controls
 open System.Windows.Media
 open System.Windows.Shapes
 
+open System.ComponentModel
+open Microsoft.FSharp.Quotations.Patterns
+
+type ObservableObject () =
+    let propertyChanged = 
+        Event<PropertyChangedEventHandler,PropertyChangedEventArgs>()
+    let getPropertyName = function 
+        | PropertyGet(_,pi,_) -> pi.Name
+        | _ -> invalidOp "Expecting property getter expression"
+    interface INotifyPropertyChanged with
+        [<CLIEvent>]
+        member this.PropertyChanged = propertyChanged.Publish
+    member this.NotifyPropertyChanged propertyName = 
+        propertyChanged.Trigger(this,PropertyChangedEventArgs(propertyName))
+    member this.NotifyPropertyChanged quotation = 
+        quotation |> getPropertyName |> this.NotifyPropertyChanged
+
 [<AutoOpen>]
 module GridLines =
     let createHorizontalLine () =
@@ -21,7 +38,7 @@ module GridLines =
                   HorizontalAlignment=HorizontalAlignment.Left)
 
 type internal ICollectionChanger<'T> =
-    abstract member InsertAt : int * 'T -> unit
+    abstract member Insert : int * 'T -> unit
     abstract member RemoveAt : int -> unit
     abstract member SetAt : int * 'T -> unit
     abstract member Clear : unit -> unit
@@ -31,7 +48,7 @@ module internal Relay =
     let relayChange (dest:ICollectionChanger<'T>) (change:NotifyCollectionChangedEventArgs) =
         match change.Action with
         | NotifyCollectionChangedAction.Add ->
-            dest.InsertAt(change.NewStartingIndex,change.NewItems.[0] :?> 'T)
+            dest.Insert(change.NewStartingIndex,change.NewItems.[0] :?> 'T)
         | NotifyCollectionChangedAction.Remove -> 
             dest.RemoveAt(change.OldStartingIndex)
         | NotifyCollectionChangedAction.Replace -> 
@@ -40,7 +57,7 @@ module internal Relay =
             dest.Clear()
         | _ -> invalidOp ""
 
-    let relayChanges (source:ObservableCollection<'T>) (dest:ICollectionChanger<'T>) =
+    let relayChanges (source:INotifyCollectionChanged) (dest:ICollectionChanger<'T>) =
         source.CollectionChanged |> Observable.subscribe (relayChange dest)
        
 type DataGridColumn<'TItem>(header:FrameworkElement, 
@@ -58,9 +75,17 @@ type DataGridColumn<'TItem>(header:FrameworkElement,
     member column.Definition = definition
 
 type DataGridRow<'TItem>(header:obj, item:'TItem, definition:RowDefinition) =
-    new (header,item) = DataGridRow(header,item,RowDefinition())
+    inherit ObservableObject()
+    let mutable header = header
+    new (header,item) = 
+        let defaultRowHeight = 22.0
+        DataGridRow(header,item,RowDefinition(Height=GridLength(defaultRowHeight)))
     member this.Item = item
-    member this.Header = header
+    member this.Header
+        with get () = header
+        and set value =
+            header <- value
+            this.NotifyPropertyChanged <@this.Header@>
     member this.Definition = definition
 
 [<AutoOpen>]
@@ -94,7 +119,7 @@ module internal Changers =
             let xs = grid.ColumnDefinitions 
             for index = xs.Count-1 downto 1 do xs.RemoveAt index
         { new ICollectionChanger<DataGridColumn<'TItem>> with
-            member target.InsertAt(index,column) =
+            member target.Insert(index,column) =
                 insertColumnDefinition(index,column.Definition)
 
                 let inline pushRight (elements:IList<_>) =
@@ -167,7 +192,7 @@ module internal Changers =
                 removeColumnDefinition(index) 
             member target.SetAt(index,value) = 
                 target.RemoveAt(index)
-                target.InsertAt(index,value)
+                target.Insert(index,value)
             member target.Clear() =
                 let removeElements (elements:IList<_>) =
                     for element in elements do grid.Children.Remove element |> ignore
@@ -195,9 +220,8 @@ module internal Changers =
             let ys = grid.RowDefinitions
             for index = ys.Count-1 downto 1 do ys.RemoveAt index
         { new ICollectionChanger<DataGridRow<'TItem>> with
-            member target.InsertAt(index,row) =
-                let defaultRowHeight = 22.0
-                insertRowDefinition(index,RowDefinition(Height=GridLength(defaultRowHeight)))
+            member target.Insert(index,row) =
+                insertRowDefinition(index,row.Definition)
 
                 let rowCount = rowCells.Count
                 let pushDown f =
@@ -220,7 +244,11 @@ module internal Changers =
                     Grid.SetRowSpan(vline, 1 + hlines.Count)
 
                 pushDown (fun y -> rowHeaders.[y])
-                let header = TextBlock(Text=row.Header.ToString())
+                let header = 
+                    match row.Header with
+                    | :? FrameworkElement as fe -> fe
+                    | null -> TextBlock() :> FrameworkElement
+                    | x -> TextBlock(Text=row.Header.ToString()) :> FrameworkElement
                 setRow(header,index)
                 grid.Children.Add(header)
                 rowHeaders.Insert(index, header)
@@ -267,7 +295,7 @@ module internal Changers =
 
             member target.SetAt(index,item) =
                 target.RemoveAt(index)
-                target.InsertAt(index,item)
+                target.Insert(index,item)
             member target.Clear() =
                 let removeElements (elements:IList<_>) =
                     for element in elements do grid.Children.Remove element |> ignore
@@ -321,3 +349,60 @@ type DataGrid<'TItem> () =
 
     interface IDisposable with
         member this.Dispose() = for d in disposables do d.Dispose()
+
+type DataGridColumn () =
+    inherit DataGridColumn<obj>("Header", fun _ -> TextBlock(Text="Cell") :> FrameworkElement)
+
+type DataGridRowEventArgs (row:DataGridRow<_>) =
+    inherit EventArgs ()
+    member this.Row = row
+
+type DataGrid () as this =
+    inherit UserControl()
+    let dataGrid = new DataGrid<obj>()
+    do  this.Content <- dataGrid
+    let columns = ObservableCollection<DataGridColumn>()
+    let mutable items : System.Collections.IEnumerable = null
+    let columnsChanger =
+        { new ICollectionChanger<_> with
+            member this.Insert(index,item) =
+                dataGrid.Columns.Insert(index,item)
+            member this.RemoveAt(index) =
+                dataGrid.Columns.RemoveAt(index)
+            member this.SetAt(index, item) =
+                dataGrid.Columns.[index] <- item
+            member this.Clear() =
+                dataGrid.Columns.Clear()
+        }
+    let loadingRow = Event<EventHandler<DataGridRowEventArgs>,DataGridRowEventArgs>()
+    let insertRow index item =
+        let row = DataGridRow<_>(null, item)
+        loadingRow.Trigger(this,DataGridRowEventArgs(row))
+        dataGrid.Rows.Insert(index,row)
+    let rowsChanger =
+        { new ICollectionChanger<_> with
+            member this.Insert(index,item) =
+                insertRow index item
+            member this.RemoveAt(index) =
+                dataGrid.Rows.RemoveAt(index)
+            member this.SetAt(index, item) =
+                let oldRow = dataGrid.Rows.[index]
+                let newRow = DataGridRow<_>(oldRow.Header,item)
+                dataGrid.Rows.[index] <- newRow
+            member this.Clear() =
+                dataGrid.Rows.Clear()
+        }
+    let columnSubscription = relayChanges columns columnsChanger
+    let mutable rowSubscription = { new IDisposable with member x.Dispose() = () }
+    member this.LoadingRow = loadingRow.Publish
+    member this.Columns = columns
+    member this.ItemsSource
+        with get () = items
+        and set value =
+            rowSubscription.Dispose()
+            items <- value
+            items |> Seq.cast |> Seq.iteri insertRow
+            match items with
+            | :? INotifyCollectionChanged as items ->
+                rowSubscription <- relayChanges items rowsChanger
+            | _ -> ()
