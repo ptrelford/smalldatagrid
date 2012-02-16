@@ -14,11 +14,11 @@ module GridLines =
     let createHorizontalLine () =
         Rectangle(Height=1.0,
                   Stroke=SolidColorBrush Colors.Gray,
-                  VerticalAlignment=VerticalAlignment.Top)       
+                  VerticalAlignment=VerticalAlignment.Top)
     let createVerticalLine () =
         Rectangle(Width=1.0,
                   Stroke=SolidColorBrush Colors.Gray,
-                  HorizontalAlignment=HorizontalAlignment.Left)                             
+                  HorizontalAlignment=HorizontalAlignment.Left)
 
 type internal ICollectionChanger<'T> =
     abstract member InsertAt : int * 'T -> unit
@@ -64,30 +64,30 @@ module internal Changers =
     
     let createColumnsChanger 
             (grid:Grid) 
-            (headers:List<_>) 
-            (vlines:List<_>,hlines:List<_>) 
+            (headers:IList<_>) 
+            (vlines:IList<_>,hlines:IList<_>) 
             items 
-            (rowCells:IList<List<_>>) =
+            (rowCells:List<List<_>>) =
         
         let insertColumnDefinition(index,definition) =
             grid.ColumnDefinitions.Insert(index+1, definition)
         let removeColumnDefinition(index) =
             grid.ColumnDefinitions.RemoveAt(index+1)
-        let clearColumnDefinitions() =                
+        let clearColumnDefinitions() =
             let xs = grid.ColumnDefinitions 
             for index = xs.Count-1 downto 1 do xs.RemoveAt index
         { new ICollectionChanger<DataGridColumn<'TItem>> with
-            member target.InsertAt(index,column) =            
-                insertColumnDefinition(index,column.Definition)                                            
+            member target.InsertAt(index,column) =
+                insertColumnDefinition(index,column.Definition)
 
-                let inline pushRight (elements:List<_>) =                    
+                let inline pushRight (elements:IList<_>) =
                     let columnCount = elements.Count
-                    for x = columnCount-1 downto index do               
+                    for x = columnCount-1 downto index do
                         setColumn(elements.[x], x+1)
 
-                let inline insertElement element =                                                                         
-                    setColumn(element, index)                    
-                    grid.Children.Add element             
+                let inline insertElement element =
+                    setColumn(element, index)
+                    grid.Children.Add element
 
                 pushRight vlines
                 let vline = createVerticalLine()
@@ -98,9 +98,9 @@ module internal Changers =
                 for hline in hlines do
                     Grid.SetColumnSpan(hline, 1 + vlines.Count)
                     
-                pushRight headers   
-                let header = column.Header               
-                insertElement header                
+                pushRight headers
+                let header = column.Header
+                insertElement header
                 headers.Insert(index,header)
                 
                 items |> Seq.iteri (fun y item -> 
@@ -113,9 +113,9 @@ module internal Changers =
                     cells.Insert(index, cell)
                 )
 
-            member target.RemoveAt(index) =              
-                let inline pullLeft (elements:List<_>) =
-                    for x = elements.Count-1 downto index+1 do                    
+            member target.RemoveAt(index) =
+                let inline pullLeft (elements:IList<_>) =
+                    for x = elements.Count-1 downto index+1 do
                         setColumn(elements.[x], x-1)
                     
                 let inline removeElement element =
@@ -133,17 +133,17 @@ module internal Changers =
                 headers.RemoveAt(index)
 
                 items |> Seq.iteri (fun y item ->
-                    let cells = rowCells.[y]                        
+                    let cells = rowCells.[y]
                     removeElement cells.[index]
                     pullLeft cells
-                    rowCells.[y].RemoveAt(index)                                       
+                    rowCells.[y].RemoveAt(index)
                 )
                 removeColumnDefinition(index) 
             member target.SetAt(index,value) = 
                 target.RemoveAt(index)
                 target.InsertAt(index,value)
             member target.Clear() =
-                let removeElements (elements:IList<_>) =                    
+                let removeElements (elements:IList<_>) =
                     for element in elements do grid.Children.Remove element |> ignore
                     elements.Clear()           
                 removeElements headers
@@ -155,8 +155,8 @@ module internal Changers =
 
     let createItemsChanger 
             (grid:Grid) 
-            (rowHeaders:List<FrameworkElement>) 
-            (vlines:List<_>,hlines:List<_>) 
+            (rowHeaders:IList<FrameworkElement>) 
+            (vlines:IList<_>,hlines:IList<_>) 
             (columns:DataGridColumn<_> seq) 
             (rowCells:List<List<_>>) =
         
@@ -164,54 +164,55 @@ module internal Changers =
             grid.RowDefinitions.Insert(index+1, definition)
         let removeRowDefinition(index) =
             grid.RowDefinitions.RemoveAt(index+1)
-        let clearRowDefinitions() =                
+        let clearRowDefinitions() =
             let ys = grid.RowDefinitions 
             for index = ys.Count-1 downto 1 do ys.RemoveAt index
         { new ICollectionChanger<'TItem> with
             member target.InsertAt(index,item) =
                 insertRowDefinition(index,RowDefinition())
-                
+
                 let rowCount = rowCells.Count
                 let pushDown f =
-                    for y = rowCount - 1 downto index do                        
+                    for y = rowCount - 1 downto index do
                         let element = f y
                         setRow(element, y+1)
-                                             
+
                 columns |> Seq.iteri(fun x row -> 
                     pushDown (fun y -> rowCells.[y].[x]) 
                 )
                 
                 pushDown (fun y -> hlines.[y])
-                let hline = createHorizontalLine ()              
+                let hline = createHorizontalLine ()
                 setRow(hline,index)  
-                Grid.SetColumnSpan(hline, 1 + Seq.length columns)               
-                grid.Children.Add(hline)                
+                Grid.SetColumnSpan(hline, 1 + Seq.length columns)
+                grid.Children.Add(hline)
                 hlines.Insert(index,hline)
 
                 for vline in vlines do
                     Grid.SetRowSpan(vline, 1 + hlines.Count)
 
                 pushDown (fun y -> rowHeaders.[y])
-                let header = TextBlock(Text=item.ToString())       
+                let header = TextBlock(Text=item.ToString())
                 setRow(header,index)
                 grid.Children.Add(header)
                 rowHeaders.Insert(index, header)
 
-                rowCells.Insert(index, List<_>())
+                let cells = List<_>()
                 columns |> Seq.iteri(fun x column ->
                     let cell = column.CreateCell(item)
                     cell.Margin <- margin  
                     setColumn(cell, x)
                     setRow(cell, index)
-                    rowCells.[index].Insert(x, cell)
+                    cells.Insert(x, cell)
                     grid.Children.Add cell
                 )
+                rowCells.Insert(index, cells)
 
-            member target.RemoveAt(index) =                                
+            member target.RemoveAt(index) =
                 let inline pullUp f =
-                    for y = rowCells.Count - 1 downto index+1 do                    
+                    for y = rowCells.Count - 1 downto index+1 do
                         let element = f y
-                        setRow(element, y-1)                  
+                        setRow(element, y-1)
 
                 let inline removeElement element =
                     grid.Children.Remove element |> ignore
@@ -221,16 +222,16 @@ module internal Changers =
                 hlines.RemoveAt(index)
                                             
                 for vline in vlines do
-                    Grid.SetRowSpan(vline, 1 + hlines.Count)            
-                
+                    Grid.SetRowSpan(vline, 1 + hlines.Count)
+
                 removeElement rowHeaders.[index]
                 pullUp (fun y -> rowHeaders.[y])
                 rowHeaders.RemoveAt(index)
 
-                columns |> Seq.iteri (fun x column ->                    
-                    let cell = rowCells.[index].[x]                        
-                    removeElement cell               
-                    pullUp (fun y -> rowCells.[y].[x])                                                        
+                columns |> Seq.iteri (fun x column ->
+                    let cell = rowCells.[index].[x]
+                    removeElement cell
+                    pullUp (fun y -> rowCells.[y].[x])
                 )
                 rowCells.RemoveAt(index)
 
@@ -240,14 +241,14 @@ module internal Changers =
                 target.RemoveAt(index)
                 target.InsertAt(index,item)
             member target.Clear() =
-                let removeElements (elements:IList<_>) =                    
+                let removeElements (elements:IList<_>) =
                     for element in elements do grid.Children.Remove element |> ignore
                     elements.Clear()
                 for y = rowCells.Count - 1 downto 0 do
-                    removeElements rowCells.[y]               
+                    removeElements rowCells.[y]
                 rowCells.Clear()
                 removeElements rowHeaders
-                clearRowDefinitions()                
+                clearRowDefinitions()
         }
 
 type DataGrid<'TItem> () =
@@ -275,12 +276,13 @@ type DataGrid<'TItem> () =
     let columnsChanger = createColumnsChanger grid columnHeaders (columnLines,rowLines) items rowCells
     do  relayChanges columns columnsChanger |> remember
     
-    let itemsChanger = createItemsChanger grid rowHeaders (columnLines,rowLines) columns rowCells       
+    let itemsChanger = createItemsChanger grid rowHeaders (columnLines,rowLines) columns rowCells
     do  relayChanges items itemsChanger |> remember
 
     do base.Content <- grid
 
     member this.Columns = columns
+    /// Rows
     member this.Items = items
     
     interface IDisposable with
