@@ -59,21 +59,23 @@ module internal Relay =
 
     let relayChanges (source:INotifyCollectionChanged) (dest:ICollectionChanger<'T>) =
         source.CollectionChanged |> Observable.subscribe (relayChange dest)
-       
-type DataGridColumn<'TItem>(header:FrameworkElement, 
+
+type DataGridColumnHeader() =
+    inherit ContentControl()
+
+type DataGridColumn<'TItem>(header:obj,
                             createCell:Func<'TItem,FrameworkElement>,
                             definition:ColumnDefinition) =
-    new (header:string,createCell:'TItem->FrameworkElement) =
-        DataGridColumn(TextBlock(Text=header),createCell,ColumnDefinition(Width=GridLength.Auto))
     new (header,createCell:'TItem->FrameworkElement) =
         DataGridColumn(header,createCell,ColumnDefinition(Width=GridLength.Auto))
-    new (header:obj,createCell:'TItem->FrameworkElement) =
-        DataGridColumn(TextBlock(Text=header.ToString()),createCell,ColumnDefinition(Width=GridLength.Auto))
     new (header,createCell:'TItem->FrameworkElement,width:GridLength) =
         DataGridColumn(header,createCell,ColumnDefinition(Width=width))
     member column.Header = header
     member column.CreateCell row =createCell.Invoke row
     member column.Definition = definition
+
+type DataGridRowHeader() =
+    inherit ContentControl()
 
 type DataGridRow<'TItem>(header:obj, item:'TItem, definition:RowDefinition) =
     inherit ObservableObject()
@@ -142,7 +144,7 @@ module internal Changers =
                     Grid.SetColumnSpan(hline, 1 + vlines.Count)
                     
                 pushRight headers
-                let header = column.Header
+                let header = DataGridColumnHeader(Content=column.Header)
                 insertElement header
                 headers.Insert(index,header)
 
@@ -245,11 +247,7 @@ module internal Changers =
                     Grid.SetRowSpan(vline, 1 + hlines.Count)
 
                 pushDown (fun y -> rowHeaders.[y])
-                let header = 
-                    match row.Header with
-                    | :? FrameworkElement as fe -> fe
-                    | null -> TextBlock() :> FrameworkElement
-                    | x -> TextBlock(Text=row.Header.ToString()) :> FrameworkElement
+                let header = DataGridRowHeader(Content=row.Header)
                 setRow(header,index)
                 grid.Children.Add(header)
                 rowHeaders.Insert(index, header)
@@ -326,11 +324,11 @@ type DataGrid<'TItem> () =
     do  createSplitter () |> grid.Children.Add
 
     let columns = ObservableCollection<DataGridColumn<'TItem>>()
-    let columnHeaders = List<FrameworkElement>()
+    let columnHeaders = List<_>()
     let columnSplitters = List<GridSplitter>()
     let columnLines = List<Rectangle>()
     let rows = ObservableCollection<DataGridRow<'TItem>>()
-    let rowHeaders = List<FrameworkElement>()
+    let rowHeaders = List<_>()
     let rowLines = List<Rectangle>()
     let rowCells = List<List<FrameworkElement>>()
 
