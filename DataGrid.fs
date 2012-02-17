@@ -60,9 +60,9 @@ module internal Relay =
     let relayChanges (source:INotifyCollectionChanged) (dest:ICollectionChanger<'T>) =
         source.CollectionChanged |> Observable.subscribe (relayChange dest)
 
-type DataGridCell(update:unit -> unit) =
-    inherit ContentControl()
-    new () = DataGridCell(ignore)
+type DataGridCell(content:FrameworkElement,update:unit -> unit) =
+    new (content) = DataGridCell(content,ignore)
+    member cell.Content = content
     member cell.Update() = update ()
 
 type DataGridColumnHeader() =
@@ -122,14 +122,14 @@ module internal Changers =
                 for index = xs.Count-1 downto 1 do xs.RemoveAt index
         }
 
-    let inline pushRight index (elements:IList<_>) =
+    let inline pushRight get index (elements:IList<_>) =
         let columnCount = elements.Count
         for x = columnCount-1 downto index do
-            setColumn(elements.[x], x+1)
+            setColumn(get elements.[x], x+1)
 
-    let inline pullLeft index (elements:IList<_>) =
+    let inline pullLeft get index (elements:IList<_>) =
         for x = elements.Count-1 downto index+1 do
-            setColumn(elements.[x], x-1)
+            setColumn(get elements.[x], x-1)
 
     let inline insertElement (grid:Grid) index element =
         setColumn(element, index)
@@ -138,25 +138,28 @@ module internal Changers =
     let inline removeElement (grid:Grid) element =
         grid.Children.Remove element |> ignore
 
-    let removeElements (grid:Grid) (elements:IList<_>) =
-        for element in elements do grid.Children.Remove element |> ignore
+    let removeElements get (grid:Grid) (elements:IList<_>) =
+        for element in elements do grid.Children.Remove (get element) |> ignore
         elements.Clear()
 
-    let elementsChanger<'T when 'T :> FrameworkElement> (grid:Grid) (elements:IList<'T>)  =
-        { new ICollectionChanger<'T> with
+    let elementsChanger<'TItem, 'TElement when 'TElement :> FrameworkElement> 
+            (get:'TItem->'TElement) 
+            (grid:Grid) 
+            (elements:IList<'TItem>)  =
+        { new ICollectionChanger<_> with
             member target.Insert(index,value) =
-                pushRight index elements
-                insertElement grid index value
+                pushRight get index elements
+                insertElement grid index (get value)
                 elements.Insert(index,value)
             member target.RemoveAt(index) =
-                removeElement grid elements.[index]
-                pullLeft index elements
+                removeElement grid (get elements.[index])
+                pullLeft get index elements
                 elements.RemoveAt(index)
             member target.SetAt(index,value) =
                 target.RemoveAt(index)
                 target.Insert(index,value)
             member target.Clear() =
-                removeElements grid elements
+                removeElements get grid elements
         }
 
     let createColumnsChanger 
@@ -167,9 +170,10 @@ module internal Changers =
             (rows:DataGridRow<_> seq)
             (rowCells:List<List<_>>) =
         let definitionsChanger = columnDefinitionsChanger grid
-        let headersChanger = elementsChanger grid headers
-        let splittersChanger = elementsChanger grid splitters
-        let vlinesChanger = elementsChanger grid vlines
+        let headersChanger = elementsChanger id grid headers
+        let splittersChanger = elementsChanger id grid splitters
+        let vlinesChanger = elementsChanger id grid vlines
+        let toContent (cell:DataGridCell) = cell.Content
         { new ICollectionChanger<DataGridColumn<'TItem>> with
             member target.Insert(index,column) =
                 definitionsChanger.Insert(index,column.Definition)
@@ -189,9 +193,9 @@ module internal Changers =
 
                 rows |> Seq.iteri (fun y row -> 
                     let cell = column.CreateCell(row.Item) 
-                    cell.Margin <- margin
-                    setRow(cell, y)
-                    let rowChanger = elementsChanger grid rowCells.[y]
+                    cell.Content.Margin <- margin
+                    setRow(cell.Content, y)
+                    let rowChanger = elementsChanger toContent grid rowCells.[y]
                     rowChanger.Insert(index,cell)
                 )
             member target.RemoveAt(index) =
@@ -204,7 +208,7 @@ module internal Changers =
                 splittersChanger.RemoveAt(index)
 
                 rows |> Seq.iteri (fun y row ->
-                    let rowChanger = elementsChanger grid rowCells.[y]
+                    let rowChanger = elementsChanger toContent grid rowCells.[y]
                     rowChanger.RemoveAt(index)
                 )
                 definitionsChanger.RemoveAt(index) 
@@ -216,7 +220,7 @@ module internal Changers =
                 splittersChanger.Clear()
                 vlinesChanger.Clear()
                 for y = rowCells.Count - 1 downto 0 do
-                    removeElements grid rowCells.[y]
+                    removeElements toContent grid rowCells.[y]
                 definitionsChanger.Clear()
         }
 
@@ -225,7 +229,7 @@ module internal Changers =
             (rowHeaders:IList<FrameworkElement>)
             (vlines:IList<_>,hlines:IList<_>)
             (columns:DataGridColumn<'TItem> seq)
-            (rowCells:List<List<_>>) =
+            (rowCells:List<List<DataGridCell>>) =
         
         let insertRowDefinition(index,definition) =
             grid.RowDefinitions.Insert(index+1, definition)
@@ -245,7 +249,7 @@ module internal Changers =
                         setRow(element, y+1)
 
                 columns |> Seq.iteri(fun x row -> 
-                    pushDown (fun y -> rowCells.[y].[x]) 
+                    pushDown (fun y -> rowCells.[y].[x].Content) 
                 )
                 
                 pushDown (fun y -> hlines.[y])
@@ -267,11 +271,11 @@ module internal Changers =
                 let cells = List<_>()
                 columns |> Seq.iteri(fun x column ->
                     let cell = column.CreateCell(row.Item)
-                    cell.Margin <- margin  
-                    setColumn(cell, x)
-                    setRow(cell, index)
+                    cell.Content.Margin <- margin  
+                    setColumn(cell.Content, x)
+                    setRow(cell.Content, index)
                     cells.Insert(x, cell)
-                    grid.Children.Add cell
+                    grid.Children.Add cell.Content
                 )
                 rowCells.Insert(index, cells)
 
@@ -297,8 +301,8 @@ module internal Changers =
 
                 columns |> Seq.iteri (fun x column ->
                     let cell = rowCells.[index].[x]
-                    removeElement cell
-                    pullUp (fun y -> rowCells.[y].[x])
+                    removeElement cell.Content
+                    pullUp (fun y -> rowCells.[y].[x].Content)
                 )
                 rowCells.RemoveAt(index)
 
@@ -308,13 +312,13 @@ module internal Changers =
                 target.RemoveAt(index)
                 target.Insert(index,item)
             member target.Clear() =
-                let removeElements (elements:IList<_>) =
-                    for element in elements do grid.Children.Remove element |> ignore
+                let removeElements get (elements:IList<_>) =
+                    for element in elements do grid.Children.Remove (get element) |> ignore
                     elements.Clear()
                 for y = rowCells.Count - 1 downto 0 do
-                    removeElements rowCells.[y]
+                    removeElements (fun (cell:DataGridCell) -> cell.Content) rowCells.[y]
                 rowCells.Clear()
-                removeElements rowHeaders
+                removeElements id rowHeaders
                 clearRowDefinitions()
         }
 
@@ -368,7 +372,7 @@ type DataGridColumn (header:obj, createCell) =
 type DataGridTemplateColumn (header:obj, cellTemplate:DataTemplate) =
     inherit DataGridColumn(
                 header, 
-                (fun (item:obj) -> DataGridCell(Content=(cellTemplate.LoadContent() :?> FrameworkElement))))
+                (fun (item:obj) -> DataGridCell(cellTemplate.LoadContent() :?> FrameworkElement)))
 
 type DataGridRowEventArgs (row:DataGridRow<_>) =
     inherit EventArgs ()

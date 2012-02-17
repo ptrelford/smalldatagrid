@@ -24,7 +24,7 @@ type App() as app =
         //text.DataContext <- row
         //text.SetBinding(TextBlock.TextProperty, binding) |> ignore
         text.TextAlignment <- TextAlignment.Right
-        DataGridCell((fun () -> text.Text <- "Updated " + row.ToString()), Content=text)
+        DataGridCell(text,(fun () -> text.Text <- "Updated " + row.ToString()))
     
     let grid = new DataGrid<Row>()
 
@@ -32,7 +32,7 @@ type App() as app =
             DataGridColumn<_>(sprintf "%d" x, toCell)
             |> grid.Columns.Add
 
-    let rows = [1..20] |> List.map (fun x -> Row("Cell " + x.ToString()))
+    let rows = [1..200] |> List.map (fun x -> Row("Cell " + x.ToString()))
     do  rows |> Seq.iteri (fun i row -> DataGridRow(i, row) |> grid.Rows.Add)
     do  grid.Rows.RemoveAt(1)
     do  grid.Rows.Insert(9, DataGridRow("Hello", Row("New")))
