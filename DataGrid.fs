@@ -60,18 +60,23 @@ module internal Relay =
     let relayChanges (source:INotifyCollectionChanged) (dest:ICollectionChanger<'T>) =
         source.CollectionChanged |> Observable.subscribe (relayChange dest)
 
+type DataGridCell(update:unit -> unit) =
+    inherit ContentControl()
+    new () = DataGridCell(ignore)
+    member cell.Update() = update ()
+
 type DataGridColumnHeader() =
     inherit ContentControl()
 
 type DataGridColumn<'TItem>(header:obj,
-                            createCell:Func<'TItem,FrameworkElement>,
+                            createCell:'TItem -> DataGridCell,
                             definition:ColumnDefinition) =
-    new (header,createCell:'TItem->FrameworkElement) =
+    new (header,createCell) =
         DataGridColumn(header,createCell,ColumnDefinition(Width=GridLength.Auto))
-    new (header,createCell:'TItem->FrameworkElement,width:GridLength) =
+    new (header,createCell,width:GridLength) =
         DataGridColumn(header,createCell,ColumnDefinition(Width=width))
     member column.Header = header
-    member column.CreateCell row =createCell.Invoke row
+    member column.CreateCell row = createCell row
     member column.Definition = definition
 
 type DataGridRowHeader() =
@@ -337,7 +342,7 @@ type DataGrid<'TItem> () =
     let rows = ObservableCollection<DataGridRow<'TItem>>()
     let rowHeaders = List<_>()
     let rowLines = List<Rectangle>()
-    let rowCells = List<List<FrameworkElement>>()
+    let rowCells = List<List<_>>()
 
     let columnsChanger = createColumnsChanger grid columnHeaders columnSplitters (columnLines,rowLines) rows rowCells
     do  relayChanges columns columnsChanger |> remember
@@ -352,6 +357,7 @@ type DataGrid<'TItem> () =
 
     member this.Columns = columns
     member this.Rows = rows
+    member this.CellAt(x,y) = rowCells.[y].[x]
 
     interface IDisposable with
         member this.Dispose() = for d in disposables do d.Dispose()
@@ -360,7 +366,9 @@ type DataGridColumn (header:obj, createCell) =
     inherit DataGridColumn<obj>(header, createCell)
     
 type DataGridTemplateColumn (header:obj, cellTemplate:DataTemplate) =
-    inherit DataGridColumn(header, (fun (item:obj) -> cellTemplate.LoadContent() :?> FrameworkElement))
+    inherit DataGridColumn(
+                header, 
+                (fun (item:obj) -> DataGridCell(Content=(cellTemplate.LoadContent() :?> FrameworkElement))))
 
 type DataGridRowEventArgs (row:DataGridRow<_>) =
     inherit EventArgs ()
